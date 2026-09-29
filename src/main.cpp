@@ -8,12 +8,35 @@
 #define USB_BAUD_RATE 115200
 #define MAX_LINE_LENGTH 512
 #define MAX_PEERS 255
+#define BUILT_IN_LED_PIN 15
+#define HEARTBEAT_INTERVAL_MS 500
+#define SUN_SYNC_TIMEOUT_MS 1500
+
+struct __attribute__((packed)) SunStatusPacket {
+  uint8_t type;
+  uint8_t ttl;
+  uint8_t node;
+  uint32_t globalTime;
+  uint32_t commandTimestamp;
+  uint16_t voltage;
+  uint8_t charge;
+  uint8_t command;
+  uint8_t parameter;
+  uint8_t constantCommands[12];
+  uint8_t payloadSize;
+  uint8_t payload[71];
+};
+
+static_assert(sizeof(SunStatusPacket) == 100, "Unexpected SUN status packet size");
 
 static uint8_t broadcastMac[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 static uint8_t knownPeers[MAX_PEERS][6];
 static uint8_t knownPeerCount = 0;
 static char usbLineBuffer[MAX_LINE_LENGTH];
 static size_t usbLineLength = 0;
+static volatile int32_t sunClockOffsetMs = 0;
+static volatile uint32_t lastSunStatusMs = 0;
+static volatile bool sunSyncSeen = false;
 
 static void printMac(const uint8_t *mac, char *out) {
   snprintf(out, 18, "%02X:%02X:%02X:%02X:%02X:%02X",
@@ -344,6 +367,17 @@ static void onEspNowReceive(const uint8_t *mac, const uint8_t *incomingData, int
     return;
   }
 
+  if (len == static_cast<int>(sizeof(SunStatusPacket))) {
+    SunStatusPacket sunPacket;
+    memcpy(&sunPacket, incomingData, sizeof(sunPacket));
+    if (sunPacket.type == 1 && sunPacket.payloadSize <= sizeof(sunPacket.payload)) {
+      uint32_t receivedAtMs = millis();
+      sunClockOffsetMs = static_cast<int32_t>(sunPacket.globalTime - receivedAtMs);
+      lastSunStatusMs = receivedAtMs;
+      sunSyncSeen = true;
+    }
+  }
+
   String packetText = String((const char *)incomingData).substring(0, len);
 
   char sender[18];
@@ -365,9 +399,29 @@ static void onEspNowReceive(const uint8_t *mac, const uint8_t *incomingData, int
   addKnownPeer(mac);
 }
 
+static void updateHeartbeatLed() {
+  uint32_t now = millis();
+  bool synchronized = sunSyncSeen && (now - lastSunStatusMs <= SUN_SYNC_TIMEOUT_MS);
+  uint8_t brightness = 0;
+
+  if (synchronized) {
+    uint32_t globalTime = now + sunClockOffsetMs;
+    brightness = ((globalTime / HEARTBEAT_INTERVAL_MS) & 1) ? 4 : 0;
+  }
+
+  static uint8_t previousBrightness = 0;
+  if (brightness != previousBrightness) {
+    analogWrite(BUILT_IN_LED_PIN, brightness);
+    previousBrightness = brightness;
+  }
+}
+
 void setup() {
   Serial.begin(USB_BAUD_RATE);
   delay(1000);
+
+  pinMode(BUILT_IN_LED_PIN, OUTPUT);
+  analogWrite(BUILT_IN_LED_PIN, 0);
 
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);
@@ -399,6 +453,8 @@ void setup() {
 }
 
 void loop() {
+  updateHeartbeatLed();
+
   while (Serial.available() > 0) {
     int ch = Serial.read();
     if (ch == '\r') {
