@@ -1,6 +1,9 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <esp_now.h>
+#include <esp_wifi.h>
+
+#include "secrets.h"
 
 #define USB_BAUD_RATE 115200
 #define MAX_LINE_LENGTH 512
@@ -62,17 +65,17 @@ static void addKnownPeer(const uint8_t *mac) {
 }
 
 static bool addEspNowPeer(const uint8_t *mac) {
-  if (memcmp(mac, broadcastMac, 6) == 0) {
-    return true;
-  }
+  bool isBroadcast = memcmp(mac, broadcastMac, 6) == 0;
 
   esp_now_peer_info_t peerInfo = {};
   memcpy(peerInfo.peer_addr, mac, 6);
-  peerInfo.channel = 1;
+  peerInfo.channel = WIFI_CHANNEL;
   peerInfo.encrypt = false;
 
   if (esp_now_is_peer_exist(mac)) {
-    addKnownPeer(mac);
+    if (!isBroadcast) {
+      addKnownPeer(mac);
+    }
     return true;
   }
 
@@ -82,7 +85,9 @@ static bool addEspNowPeer(const uint8_t *mac) {
     return false;
   }
 
-  addKnownPeer(mac);
+  if (!isBroadcast) {
+    addKnownPeer(mac);
+  }
   return true;
 }
 
@@ -367,6 +372,14 @@ void setup() {
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);
   WiFi.setTxPower(WIFI_POWER_19dBm);
+
+  esp_err_t channelStatus = esp_wifi_set_channel(WIFI_CHANNEL, WIFI_SECOND_CHAN_NONE);
+  if (channelStatus != ESP_OK) {
+    Serial.printf("[ESP_NOW] channel setup failed: %d\n", channelStatus);
+    for (;;) {
+      delay(1000);
+    }
+  }
 
   esp_err_t status = esp_now_init();
   if (status != ESP_OK) {
