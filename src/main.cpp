@@ -51,8 +51,6 @@ static void sendGlobalTimeToSpace() {
   uint32_t now = getGlobalTime();
   Serial.print("{\"type\":\"global_time\",\"globalTime\":");
   Serial.print(now);
-  Serial.print(",\"millis\":");
-  Serial.print(millis());
   Serial.println("}");
   markSpaceTraffic();
 }
