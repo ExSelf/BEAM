@@ -42,9 +42,7 @@ static uint32_t getGlobalTime() {
 }
 
 static void markSpaceTraffic() {
-  uint32_t now = getGlobalTime();
-  lastSpaceReport = now;
-  lastTick = now;
+  lastSpaceReport = getGlobalTime();
 }
 
 static void sendGlobalTimeToSpace() {
@@ -384,21 +382,30 @@ static void onEspNowReceive(const uint8_t *mac, const uint8_t *incomingData, int
     return;
   }
 
+  char sender[18];
+  printMac(mac, sender);
+
   if (len == static_cast<int>(sizeof(SunStatusPacket))) {
     SunStatusPacket sunPacket;
     memcpy(&sunPacket, incomingData, sizeof(sunPacket));
 
-    uint32_t currentGlobalTime = getGlobalTime();
-    if (static_cast<int32_t>(sunPacket.globalTime - currentGlobalTime) > 0) {
-      globalTimeOffset = static_cast<int32_t>(sunPacket.globalTime - millis());
+    uint32_t packetOffset = sunPacket.globalTime - millis();
+    int32_t signedPacketOffset = static_cast<int32_t>(packetOffset);
+    if (globalTimeOffset < signedPacketOffset) {
+      globalTimeOffset = signedPacketOffset;
+      Serial.printf("SUN_SYNC_FROM %s node=%u ttl=%u globalTime=%lu offset=%ld\n",
+                    sender,
+                    sunPacket.node,
+                    sunPacket.ttl,
+                    static_cast<unsigned long>(sunPacket.globalTime),
+                    static_cast<long>(globalTimeOffset));
     }
+
     lastTick = getGlobalTime();
+    lastSpaceReport = getGlobalTime();
   }
 
   String packetText = String((const char *)incomingData).substring(0, len);
-
-  char sender[18];
-  printMac(mac, sender);
 
   if (packetText.startsWith("{")) {
     Serial.print("ESP_NOW_JSON_FROM ");
@@ -459,7 +466,7 @@ void loop() {
     sendGlobalTimeToSpace();
   }
 
-  if (getGlobalTime() - lastTick > TICK_INTERVAL) {
+  if (getGlobalTime() - lastTick >= TICK_INTERVAL) {
     lastTick = getGlobalTime();
     bool phase = (getGlobalTime() / TICK_INTERVAL) & 1;
     analogWrite(BUILT_IN_LED_PIN, phase ? 4 : 0);
