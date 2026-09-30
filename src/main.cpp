@@ -9,8 +9,7 @@
 #define MAX_LINE_LENGTH 512
 #define MAX_PEERS 255
 #define BUILT_IN_LED_PIN 15
-#define HEARTBEAT_INTERVAL_MS 500
-#define SUN_SYNC_TIMEOUT_MS 1500
+#define TICK_INTERVAL 500
 
 struct __attribute__((packed)) SunStatusPacket {
   uint8_t type;
@@ -34,9 +33,12 @@ static uint8_t knownPeers[MAX_PEERS][6];
 static uint8_t knownPeerCount = 0;
 static char usbLineBuffer[MAX_LINE_LENGTH];
 static size_t usbLineLength = 0;
-static volatile int32_t sunClockOffsetMs = 0;
-static volatile uint32_t lastSunStatusMs = 0;
-static volatile bool sunSyncSeen = false;
+static volatile int32_t globalTimeOffset = 0;
+static uint32_t lastTick = 0;
+
+static uint32_t getGlobalTime() {
+  return millis() + globalTimeOffset;
+}
 
 static void printMac(const uint8_t *mac, char *out) {
   snprintf(out, 18, "%02X:%02X:%02X:%02X:%02X:%02X",
@@ -370,11 +372,11 @@ static void onEspNowReceive(const uint8_t *mac, const uint8_t *incomingData, int
   if (len == static_cast<int>(sizeof(SunStatusPacket))) {
     SunStatusPacket sunPacket;
     memcpy(&sunPacket, incomingData, sizeof(sunPacket));
-    if (sunPacket.type == 1 && sunPacket.payloadSize <= sizeof(sunPacket.payload)) {
-      uint32_t receivedAtMs = millis();
-      sunClockOffsetMs = static_cast<int32_t>(sunPacket.globalTime - receivedAtMs);
-      lastSunStatusMs = receivedAtMs;
-      sunSyncSeen = true;
+    if (sunPacket.payloadSize <= sizeof(sunPacket.payload)) {
+      uint32_t currentGlobalTime = getGlobalTime();
+      if (static_cast<int32_t>(sunPacket.globalTime - currentGlobalTime) > 0) {
+        globalTimeOffset = static_cast<int32_t>(sunPacket.globalTime - millis());
+      }
     }
   }
 
@@ -397,23 +399,6 @@ static void onEspNowReceive(const uint8_t *mac, const uint8_t *incomingData, int
   }
 
   addKnownPeer(mac);
-}
-
-static void updateHeartbeatLed() {
-  uint32_t now = millis();
-  bool synchronized = sunSyncSeen && (now - lastSunStatusMs <= SUN_SYNC_TIMEOUT_MS);
-  uint8_t brightness = 0;
-
-  if (synchronized) {
-    uint32_t globalTime = now + sunClockOffsetMs;
-    brightness = ((globalTime / HEARTBEAT_INTERVAL_MS) & 1) ? 4 : 0;
-  }
-
-  static uint8_t previousBrightness = 0;
-  if (brightness != previousBrightness) {
-    analogWrite(BUILT_IN_LED_PIN, brightness);
-    previousBrightness = brightness;
-  }
 }
 
 void setup() {
@@ -453,7 +438,11 @@ void setup() {
 }
 
 void loop() {
-  updateHeartbeatLed();
+  if (getGlobalTime() - lastTick > TICK_INTERVAL) {
+    lastTick = getGlobalTime();
+    uint32_t phase = (getGlobalTime() / TICK_INTERVAL) & 1;
+    analogWrite(BUILT_IN_LED_PIN, phase ? 4 : 0);
+  }
 
   while (Serial.available() > 0) {
     int ch = Serial.read();
