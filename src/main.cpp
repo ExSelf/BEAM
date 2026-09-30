@@ -35,9 +35,26 @@ static char usbLineBuffer[MAX_LINE_LENGTH];
 static size_t usbLineLength = 0;
 static volatile int32_t globalTimeOffset = 0;
 static volatile uint32_t lastTick = 0;
+static volatile uint32_t lastSpaceReport = 0;
 
 static uint32_t getGlobalTime() {
   return millis() + globalTimeOffset;
+}
+
+static void markSpaceTraffic() {
+  uint32_t now = getGlobalTime();
+  lastSpaceReport = now;
+  lastTick = now;
+}
+
+static void sendGlobalTimeToSpace() {
+  uint32_t now = getGlobalTime();
+  Serial.print("{\"type\":\"global_time\",\"globalTime\":");
+  Serial.print(now);
+  Serial.print(",\"millis\":");
+  Serial.print(millis());
+  Serial.println("}");
+  markSpaceTraffic();
 }
 
 static void printMac(const uint8_t *mac, char *out) {
@@ -398,6 +415,7 @@ static void onEspNowReceive(const uint8_t *mac, const uint8_t *incomingData, int
     Serial.println();
   }
 
+  markSpaceTraffic();
   addKnownPeer(mac);
 }
 
@@ -431,12 +449,18 @@ void setup() {
   esp_now_register_recv_cb(onEspNowReceive);
   addEspNowPeer(broadcastMac);
 
+  lastSpaceReport = getGlobalTime();
+
   Serial.println("ESP32-S2 USB tunnel ready");
   Serial.println("Bridge mode: USB <-> ESP-NOW only");
   Serial.println("Commands: PING, STATUS, ADD_PEER <AA:BB:CC:DD:EE:FF>, BROADCAST <payload>, SEND <MAC> <payload>");
 }
 
 void loop() {
+  if (getGlobalTime() - lastSpaceReport >= 100) {
+    sendGlobalTimeToSpace();
+  }
+
   if (getGlobalTime() - lastTick > TICK_INTERVAL) {
     lastTick = getGlobalTime();
     bool phase = (getGlobalTime() / TICK_INTERVAL) & 1;
