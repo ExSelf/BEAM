@@ -13,20 +13,20 @@
 
 struct __attribute__((packed)) SunStatusPacket {
   uint8_t type;
-  uint8_t ttl;
   uint8_t node;
+  uint8_t ttl;
   uint32_t globalTime;
   uint32_t commandTimestamp;
-  uint16_t voltage;
-  uint8_t charge;
   uint8_t command;
   uint8_t parameter;
   uint8_t constantCommands[12];
-  uint8_t payloadSize;
-  uint8_t payload[71];
+  uint16_t voltage;
+  uint8_t charge;
+  uint8_t subnodes[64];
+  uint8_t reserved[158];
 };
 
-static_assert(sizeof(SunStatusPacket) == 100, "Unexpected SUN status packet size");
+static_assert(sizeof(SunStatusPacket) == 250, "Unexpected SUN status packet size");
 
 static uint8_t broadcastMac[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 static uint8_t knownPeers[MAX_PEERS][6];
@@ -372,13 +372,12 @@ static void onEspNowReceive(const uint8_t *mac, const uint8_t *incomingData, int
   if (len == static_cast<int>(sizeof(SunStatusPacket))) {
     SunStatusPacket sunPacket;
     memcpy(&sunPacket, incomingData, sizeof(sunPacket));
-    if (sunPacket.payloadSize <= sizeof(sunPacket.payload)) {
-      uint32_t currentGlobalTime = getGlobalTime();
-      if (static_cast<int32_t>(sunPacket.globalTime - currentGlobalTime) > 0) {
-        globalTimeOffset = static_cast<int32_t>(sunPacket.globalTime - millis());
-      }
-      lastTick = getGlobalTime();
+
+    uint32_t currentGlobalTime = getGlobalTime();
+    if (static_cast<int32_t>(sunPacket.globalTime - currentGlobalTime) > 0) {
+      globalTimeOffset = static_cast<int32_t>(sunPacket.globalTime - millis());
     }
+    lastTick = getGlobalTime();
   }
 
   String packetText = String((const char *)incomingData).substring(0, len);
@@ -404,7 +403,6 @@ static void onEspNowReceive(const uint8_t *mac, const uint8_t *incomingData, int
 
 void setup() {
   Serial.begin(USB_BAUD_RATE);
-  delay(1000);
 
   pinMode(BUILT_IN_LED_PIN, OUTPUT);
   analogWrite(BUILT_IN_LED_PIN, 0);
