@@ -34,7 +34,7 @@ static uint8_t knownPeerCount = 0;
 static char usbLineBuffer[MAX_LINE_LENGTH];
 static size_t usbLineLength = 0;
 static volatile int32_t globalTimeOffset = 0;
-static uint32_t lastTick = 0;
+static volatile uint32_t lastTick = 0;
 
 static uint32_t getGlobalTime() {
   return millis() + globalTimeOffset;
@@ -377,6 +377,7 @@ static void onEspNowReceive(const uint8_t *mac, const uint8_t *incomingData, int
       if (static_cast<int32_t>(sunPacket.globalTime - currentGlobalTime) > 0) {
         globalTimeOffset = static_cast<int32_t>(sunPacket.globalTime - millis());
       }
+      lastTick = getGlobalTime();
     }
   }
 
@@ -440,7 +441,7 @@ void setup() {
 void loop() {
   if (getGlobalTime() - lastTick > TICK_INTERVAL) {
     lastTick = getGlobalTime();
-    uint32_t phase = (getGlobalTime() / TICK_INTERVAL) & 1;
+    bool phase = (getGlobalTime() / TICK_INTERVAL) & 1;
     analogWrite(BUILT_IN_LED_PIN, phase ? 4 : 0);
   }
 
