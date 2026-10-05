@@ -3,7 +3,9 @@
 #include <esp_now.h>
 #include <esp_wifi.h>
 
+#if __has_include("secrets.h")
 #include "secrets.h"
+#endif
 
 #define USB_BAUD_RATE 115200
 #define MAX_LINE_LENGTH 512
@@ -492,5 +494,5 @@ void loop() {
     }
   }
 
-  delay(10);
+  yield();
 }
