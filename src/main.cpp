@@ -122,12 +122,12 @@ static void addBroadcastPeer() {
   }
 }
 
-static void sendToPeer(const uint8_t *peerMac, const uint8_t *payload, size_t len) {
-  if (len == 0 || len > ESP_NOW_MAX_DATA_LEN || peerMac == nullptr) {
+static void sendBroadcast(const uint8_t *payload, size_t len) {
+  if (len == 0 || len > ESP_NOW_MAX_DATA_LEN) {
     return;
   }
 
-  esp_now_send(peerMac, payload, len);
+  esp_now_send(broadcastMac, payload, len);
 }
 
 static void onEspNowReceive(const uint8_t *, const uint8_t *incomingData, int len) {
@@ -207,8 +207,8 @@ void loop() {
         }
         commandLedPulseStartedAt = millis();
         commandLedPulseActive = true;
-        analogWrite(BUILT_IN_LED_PIN, 255);
-        sendToPeer(broadcastMac, reinterpret_cast<const uint8_t *>(usbLineBuffer), usbLineLength);
+        digitalWrite(BUILT_IN_LED_PIN, true);
+        sendBroadcast(reinterpret_cast<const uint8_t *>(usbLineBuffer), usbLineLength);
         usbLineLength = 0;
       }
       continue;
