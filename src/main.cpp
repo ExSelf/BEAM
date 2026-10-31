@@ -14,6 +14,7 @@
 #define BUILT_IN_LED_PIN 15
 #define TICK_INTERVAL 500
 #define SUN_PACKET_SIZE 250
+#define COMMAND_LED_PULSE_DURATION_MS 10
 
 struct __attribute__((packed)) SunStatusHeader {
   uint8_t type;
@@ -30,6 +31,9 @@ static size_t usbLineLength = 0;
 static QueueHandle_t sunPacketQueue = nullptr;
 static volatile int32_t globalTimeOffset = 0;
 static portMUX_TYPE globalTimeMux = portMUX_INITIALIZER_UNLOCKED;
+static uint32_t commandLedPulseStartedAt = 0;
+static bool commandLedPulseActive = false;
+static uint8_t ledBlinkBrightness = 0;
 
 static uint32_t getGlobalTime() {
   return millis() + globalTimeOffset;
@@ -177,7 +181,16 @@ void loop() {
   if (globalTime - lastTick >= TICK_INTERVAL) {
     lastTick = globalTime;
     bool phase = (globalTime / TICK_INTERVAL) & 1;
-    analogWrite(BUILT_IN_LED_PIN, phase ? 4 : 0);
+    ledBlinkBrightness = phase ? 4 : 0;
+    if (!commandLedPulseActive) {
+      analogWrite(BUILT_IN_LED_PIN, ledBlinkBrightness);
+    }
+  }
+
+  if (commandLedPulseActive &&
+      millis() - commandLedPulseStartedAt >= COMMAND_LED_PULSE_DURATION_MS) {
+    commandLedPulseActive = false;
+    analogWrite(BUILT_IN_LED_PIN, ledBlinkBrightness);
   }
 
   while (Serial.available() > 0) {
@@ -192,6 +205,9 @@ void loop() {
         if (extractGlobalTime(reinterpret_cast<const uint8_t *>(usbLineBuffer), usbLineLength, packetGlobalTime)) {
           updateGlobalTime(packetGlobalTime);
         }
+        commandLedPulseStartedAt = millis();
+        commandLedPulseActive = true;
+        analogWrite(BUILT_IN_LED_PIN, 255);
         sendToPeer(broadcastMac, reinterpret_cast<const uint8_t *>(usbLineBuffer), usbLineLength);
         usbLineLength = 0;
       }
