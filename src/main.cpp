@@ -176,12 +176,10 @@ void setup() {
 }
 
 void loop() {
-  static uint32_t lastTick = 0;
   uint32_t globalTime = getGlobalTime();
-  if (globalTime - lastTick >= TICK_INTERVAL) {
-    lastTick = globalTime;
-    bool phase = (globalTime / TICK_INTERVAL) & 1;
-    ledBlinkBrightness = phase ? 4 : 0;
+  uint8_t tickBrightness = ((globalTime / TICK_INTERVAL) & 1) ? 4 : 0;
+  if (tickBrightness != ledBlinkBrightness) {
+    ledBlinkBrightness = tickBrightness;
     if (!commandLedPulseActive) {
       analogWrite(BUILT_IN_LED_PIN, ledBlinkBrightness);
     }
